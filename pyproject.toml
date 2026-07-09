@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "review-pulse"
+version = "0.1.0"
+description = "AI-powered weekly app review pulse for INDMoney"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  # P0 — Scaffold
+  "pydantic>=2.0",
+  "pydantic-settings>=2.0",
+  "pyyaml>=6.0",
+  "python-dotenv>=1.0",
+  "typer>=0.12",
+  # P1 — Ingestion
+  "google-play-scraper>=1.2",
+  "app-store-scraper>=0.3",
+  # P2 — Processing
+  "sentence-transformers>=3.0",
+  "scikit-learn>=1.4",
+  "numpy>=1.26",
+  "langdetect>=1.0.9",
+  # P3 — LLM + Graph
+  "langgraph>=0.2",
+  "langchain>=0.3",
+  "langchain-groq>=0.2",
+  "rapidfuzz>=3.0",
+  "groq>=0.9",
+  # P5 — Delivery
+  "httpx>=0.24",
+  # API / Deployment
+  "fastapi>=0.100.0",
+  "uvicorn>=0.20.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+review-pulse = "review_pulse.__main__:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

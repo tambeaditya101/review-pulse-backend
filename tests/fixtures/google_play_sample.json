@@ -1,0 +1,81 @@
+[
+  {
+    "reviewId": "gp_001",
+    "userName": "Raj Kumar",
+    "content": "Great app for mutual fund investments. SIP tracking is excellent and the UI is very clean.",
+    "score": 5,
+    "at": "2026-06-15T10:30:00Z",
+    "reviewCreatedVersion": "5.2.1"
+  },
+  {
+    "reviewId": "gp_002",
+    "userName": "Priya Sharma",
+    "content": "App crashes frequently when trying to view portfolio. Please fix this issue!",
+    "score": 2,
+    "at": "2026-06-10T14:20:00Z",
+    "reviewCreatedVersion": "5.2.0"
+  },
+  {
+    "reviewId": "gp_003",
+    "userName": "Amit Patel",
+    "content": "Good app but withdrawal takes too long. Waited 3 days for my money.",
+    "score": 3,
+    "at": "2026-06-12T09:15:00Z",
+    "reviewCreatedVersion": "5.2.1"
+  },
+  {
+    "reviewId": "gp_004",
+    "userName": "Sneha Reddy",
+    "content": "Love the US stocks feature! Finally can invest in Apple &amp; Google from India. \u200b\u200b",
+    "score": 5,
+    "at": "2026-06-14T16:45:00Z",
+    "reviewCreatedVersion": "5.2.1"
+  },
+  {
+    "reviewId": "gp_005",
+    "userName": "Vikram Singh",
+    "content": "KYC verification is stuck for 2 weeks now. No response from support team.",
+    "score": 1,
+    "at": "2026-06-08T11:00:00Z",
+    "reviewCreatedVersion": "5.1.9"
+  },
+  {
+    "reviewId": "gp_006",
+    "userName": "Neha Gupta",
+    "content": "ok",
+    "score": 3,
+    "at": "2026-06-11T08:30:00Z",
+    "reviewCreatedVersion": "5.2.0"
+  },
+  {
+    "reviewId": "gp_007",
+    "userName": "Rahul Verma",
+    "content": "App crashes frequently when trying to view portfolio. Please fix this issue!",
+    "score": 2,
+    "at": "2026-06-10T14:20:00Z",
+    "reviewCreatedVersion": "5.2.0"
+  },
+  {
+    "reviewId": "gp_008",
+    "userName": "Old Review User",
+    "content": "This is an old review that should be filtered out by the date window.",
+    "score": 4,
+    "at": "2025-01-01T12:00:00Z",
+    "reviewCreatedVersion": "4.0.0"
+  },
+  {
+    "reviewId": "gp_009",
+    "userName": "Empty Reviewer",
+    "content": "",
+    "score": 4,
+    "at": "2026-06-13T10:00:00Z",
+    "reviewCreatedVersion": "5.2.1"
+  },
+  {
+    "reviewId": "gp_010",
+    "userName": "No Rating User",
+    "content": "This review has no score field",
+    "at": "2026-06-13T10:00:00Z",
+    "reviewCreatedVersion": "5.2.1"
+  }
+]

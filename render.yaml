@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: review-pulse-api
+    runtime: python
+    buildCommand: pip install -e . && python -m review_pulse init-db
+    startCommand: uvicorn review_pulse.api:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: EMAIL_RECIPIENTS
+        sync: false
+      - key: GOOGLE_DOC_ID
+        sync: false
+      - key: MCP_SERVER_URL
+        sync: false
+      - key: DATABASE_PATH
+        value: /data/review_pulse.db
+    disk:
+      name: review-pulse-data
+      mountPath: /data
+      sizeGB: 1

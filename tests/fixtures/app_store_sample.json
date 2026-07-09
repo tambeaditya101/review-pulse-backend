@@ -1,0 +1,58 @@
+[
+  {
+    "date": "2026-06-16T08:00:00Z",
+    "review": "Superb app for tracking all investments in one place. Highly recommend!",
+    "rating": 5,
+    "title": "Best investment app",
+    "userName": "InvestorGirl",
+    "isCurrentVersion": "5.2.1"
+  },
+  {
+    "date": "2026-06-09T12:30:00Z",
+    "review": "The mutual fund redemption process is confusing and takes too many steps.",
+    "rating": 2,
+    "title": "Needs improvement",
+    "userName": "FinanceFan42",
+    "isCurrentVersion": "5.2.0"
+  },
+  {
+    "date": "2026-06-13T19:00:00Z",
+    "review": "Customer support is non-existent. Been waiting for a week for a response about my stuck transaction.",
+    "rating": 1,
+    "title": "Terrible support",
+    "userName": "AngryUser",
+    "isCurrentVersion": "5.2.1"
+  },
+  {
+    "date": "2026-06-11T07:45:00Z",
+    "review": "Gold and FD features are amazing. Best returns I've seen. Will keep investing here.",
+    "rating": 4,
+    "title": "Good features",
+    "userName": "GoldLover",
+    "isCurrentVersion": "5.2.0"
+  },
+  {
+    "date": "2026-06-14T22:10:00Z",
+    "review": "bad",
+    "rating": 1,
+    "title": null,
+    "userName": "QuickReviewer",
+    "isCurrentVersion": "5.2.1"
+  },
+  {
+    "date": "2025-03-01T10:00:00Z",
+    "review": "This is a very old review from the App Store that should be filtered out.",
+    "rating": 3,
+    "title": "Old review",
+    "userName": "OldReviewUser",
+    "isCurrentVersion": "4.1.0"
+  },
+  {
+    "date": "2026-06-12T15:30:00Z",
+    "review": "",
+    "rating": 5,
+    "title": "No text",
+    "userName": "NoTextReviewer",
+    "isCurrentVersion": "5.2.1"
+  }
+]

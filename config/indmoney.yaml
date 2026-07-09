@@ -1,0 +1,16 @@
+product:
+  slug: indmoney
+  display_name: INDMoney
+  google_play_package: in.indwealth
+  app_store_id: 1450178837
+  country: in
+  language: en
+
+report:
+  max_themes: 5
+  max_quotes_per_theme: 2
+  max_action_ideas: 5
+
+delivery:
+  google_doc_folder: ""
+  email_subject_template: "INDMoney Weekly Review Pulse — Week {week}"
