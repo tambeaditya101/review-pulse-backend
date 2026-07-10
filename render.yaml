@@ -2,8 +2,8 @@ services:
   - type: web
     name: review-pulse-api
     runtime: python
-    buildCommand: pip install -e . && pip install --upgrade requests urllib3 && python -m review_pulse init-db
-    startCommand: uvicorn review_pulse.api:app --host 0.0.0.0 --port $PORT
+    buildCommand: pip install -e . && pip install --upgrade requests urllib3
+    startCommand: python -m review_pulse init-db && uvicorn review_pulse.api:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: GROQ_API_KEY
         sync: false
