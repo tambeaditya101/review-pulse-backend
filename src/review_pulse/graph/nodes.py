@@ -92,8 +92,13 @@ def fetch_reviews(state: PulseState) -> PulseState:
         window_end=state["window_end"],
     )
 
+    # Count reviews strictly belonging to the target week for the dashboard metrics
+    week_start = state["week_start"]
+    week_end = state["week_end"]
+    fetched_count = sum(1 for r in raw if week_start <= r.review_date <= week_end)
+
     metrics = state.get("metrics") or RunMetrics()
-    metrics.reviews_fetched = len(raw)
+    metrics.reviews_fetched = fetched_count
 
     return {
         "raw_reviews": raw,
@@ -115,8 +120,13 @@ def clean_reviews(state: PulseState) -> PulseState:
         window_end=state["window_end"],
     )
 
+    # Count reviews strictly belonging to the target week for the dashboard metrics
+    week_start = state["week_start"]
+    week_end = state["week_end"]
+    processed_count = sum(1 for r in cleaned if week_start <= r.review_date <= week_end)
+
     metrics = state.get("metrics") or RunMetrics()
-    metrics.reviews_processed = len(cleaned)
+    metrics.reviews_processed = processed_count
 
     return {
         "clean_reviews": cleaned,
@@ -234,6 +244,8 @@ def generate_report(state: PulseState) -> PulseState:
         iso_week=state["iso_week"],
         window_start=state["window_start"].isoformat(),
         window_end=state["window_end"].isoformat(),
+        week_start=state["week_start"].isoformat(),
+        week_end=state["week_end"].isoformat(),
         reviews=sampled_reviews,
         themes=themes,
         max_themes=config.report.max_themes,

@@ -27,7 +27,8 @@ Analyze the following app reviews and produce a JSON report.
 <config>
 Product: {product_name}
 Report week: {iso_week}
-Review window: {window_start} to {window_end}
+Report week range: {week_start} to {week_end}
+Review analysis window: {window_start} to {window_end}
 Total reviews: {total_reviews}
 Number of theme clusters: {num_clusters}
 </config>
@@ -70,6 +71,7 @@ Requirements:
 - Include up to {max_quotes} total quotes (spread across themes).
 - Include up to {max_action_ideas} action ideas.
 - Every quote text MUST appear verbatim in the <reviews> section above.
+- CRITICAL: Under the "quotes" key, you must ONLY select verbatim quotes from reviews whose date metadata falls strictly within the target week range ({week_start} to {week_end}). Do not select quotes from reviews dated before {week_start}.
 """
 
 
@@ -110,6 +112,8 @@ def build_user_prompt(
     iso_week: str,
     window_start: str,
     window_end: str,
+    week_start: str,
+    week_end: str,
     reviews: list,
     themes: list,
     max_themes: int = 5,
@@ -122,6 +126,8 @@ def build_user_prompt(
         iso_week=iso_week,
         window_start=window_start,
         window_end=window_end,
+        week_start=week_start,
+        week_end=week_end,
         total_reviews=len(reviews),
         num_clusters=len(themes),
         cluster_summaries=format_cluster_summaries(themes, reviews),
