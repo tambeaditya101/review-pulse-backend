@@ -30,11 +30,29 @@ def test_deliver_doc_via_mcp_success(mock_httpx_post) -> None:
     mock_response.status_code = 200
     mock_httpx_post.return_value = mock_response
 
+    # Test without API key
     success = deliver_doc_via_mcp("doc_123", "Markdown Content")
     assert success
     mock_httpx_post.assert_called_once_with(
         "http://127.0.0.1:8000/append_to_doc",
         json={"doc_id": "doc_123", "content": "Markdown Content"},
+        headers={},
+        timeout=120.0,
+    )
+
+
+@patch.dict("os.environ", {"MCP_API_KEY": "secret_mcp_key"})
+def test_deliver_doc_via_mcp_with_api_key(mock_httpx_post) -> None:
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_httpx_post.return_value = mock_response
+
+    success = deliver_doc_via_mcp("doc_123", "Markdown Content")
+    assert success
+    mock_httpx_post.assert_called_once_with(
+        "http://127.0.0.1:8000/append_to_doc",
+        json={"doc_id": "doc_123", "content": "Markdown Content"},
+        headers={"X-API-Key": "secret_mcp_key"},
         timeout=120.0,
     )
 
@@ -59,6 +77,23 @@ def test_deliver_email_via_mcp_success(mock_httpx_post) -> None:
     mock_httpx_post.assert_called_once_with(
         "http://127.0.0.1:8000/create_email_draft",
         json={"to": "user@test.com", "subject": "Subject", "body": "Body HTML"},
+        headers={},
+        timeout=120.0,
+    )
+
+
+@patch.dict("os.environ", {"MCP_API_KEY": "secret_mcp_key"})
+def test_deliver_email_via_mcp_with_api_key(mock_httpx_post) -> None:
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_httpx_post.return_value = mock_response
+
+    success = deliver_email_via_mcp("user@test.com", "Subject", "Body HTML")
+    assert success
+    mock_httpx_post.assert_called_once_with(
+        "http://127.0.0.1:8000/create_email_draft",
+        json={"to": "user@test.com", "subject": "Subject", "body": "Body HTML"},
+        headers={"X-API-Key": "secret_mcp_key"},
         timeout=120.0,
     )
 

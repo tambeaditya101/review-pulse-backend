@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx
 
+import os
 logger = logging.getLogger(__name__)
 
 _DEFAULT_SERVER_URL = "http://127.0.0.1:8000"
@@ -24,10 +25,15 @@ def deliver_doc_via_mcp(
         "content": content,
     }
 
+    headers = {}
+    mcp_key = os.getenv("MCP_API_KEY")
+    if mcp_key:
+        headers["X-API-Key"] = mcp_key
+
     try:
         logger.info("Sending append request to MCP server: %s", url)
         # Set a long timeout since the server operator needs to approve via terminal
-        response = httpx.post(url, json=payload, timeout=120.0)
+        response = httpx.post(url, json=payload, headers=headers, timeout=120.0)
         
         if response.status_code == 200:
             logger.info("Successfully appended to Google Doc via MCP server.")
@@ -58,10 +64,15 @@ def deliver_email_via_mcp(
         "body": body,
     }
 
+    headers = {}
+    mcp_key = os.getenv("MCP_API_KEY")
+    if mcp_key:
+        headers["X-API-Key"] = mcp_key
+
     try:
         logger.info("Sending email draft request to MCP server: %s", url)
         # Set a long timeout since the server operator needs to approve via terminal
-        response = httpx.post(url, json=payload, timeout=120.0)
+        response = httpx.post(url, json=payload, headers=headers, timeout=120.0)
         
         if response.status_code == 200:
             logger.info("Successfully created Gmail draft via MCP server.")
