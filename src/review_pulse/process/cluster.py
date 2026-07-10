@@ -113,6 +113,7 @@ def embed_texts(
 
     If *run_id* is given, attempts to load from / save to the cache.
     """
+    import os
     cache_path: Path | None = None
     if run_id:
         cache_dir = cache_dir or _EMBEDDING_DIR
@@ -123,9 +124,46 @@ def embed_texts(
             logger.info("Loading cached embeddings from %s", cache_path)
             return np.load(cache_path)
 
-    model = _get_model()
-    logger.info("Encoding %d texts…", len(texts))
-    embeddings: np.ndarray = model.encode(texts, show_progress_bar=False, convert_to_numpy=True)
+    # Check if we should run in low resource/memory mode
+    low_resource = (
+        os.environ.get("LOW_RESOURCE_MODE", "").lower() in ("true", "1")
+        or os.environ.get("RENDER") is not None
+    )
+
+    if low_resource:
+        logger.info("Low resource mode active: using TF-IDF for text vectorization (saves 400MB+ RAM)")
+        try:
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            vectorizer = TfidfVectorizer(max_features=384, stop_words="english")
+            embeddings = vectorizer.fit_transform(texts).toarray()
+            # Pad with zeros if we have fewer unique words than 384
+            if embeddings.shape[1] < 384:
+                padding = np.zeros((embeddings.shape[0], 384 - embeddings.shape[1]))
+                embeddings = np.hstack([embeddings, padding])
+            
+            if cache_path is not None:
+                np.save(cache_path, embeddings)
+                logger.info("Cached embeddings to %s", cache_path)
+            return embeddings
+        except Exception as exc:
+            logger.warning("TF-IDF fallback vectorization failed: %s. Trying sentence-transformers...", exc)
+
+    try:
+        model = _get_model()
+        logger.info("Encoding %d texts…", len(texts))
+        embeddings = model.encode(texts, show_progress_bar=False, convert_to_numpy=True)
+    except Exception as exc:
+        logger.warning(
+            "Failed to load sentence-transformers model (possibly OOM or import error): %s. "
+            "Falling back to TF-IDF vectorizer.",
+            exc,
+        )
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        vectorizer = TfidfVectorizer(max_features=384, stop_words="english")
+        embeddings = vectorizer.fit_transform(texts).toarray()
+        if embeddings.shape[1] < 384:
+            padding = np.zeros((embeddings.shape[0], 384 - embeddings.shape[1]))
+            embeddings = np.hstack([embeddings, padding])
 
     if cache_path is not None:
         np.save(cache_path, embeddings)

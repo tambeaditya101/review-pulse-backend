@@ -9,7 +9,11 @@ from pathlib import Path
 from typing import Any
 
 import asyncio
+import socket
 from concurrent.futures import ThreadPoolExecutor
+
+# Set a safety timeout for all network sockets
+socket.setdefaulttimeout(30.0)
 
 from fastapi import FastAPI, HTTPException, Header, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
