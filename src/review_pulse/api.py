@@ -325,3 +325,46 @@ def get_run_themes(run_id: str) -> list[dict[str, Any]]:
         )
 
     return repo.get_themes_for_run(run_id)
+
+
+@app.get("/api/debug/mcp")
+def debug_mcp_connection() -> dict[str, Any]:
+    """Diagnostic endpoint to inspect MCP configuration and test connectivity."""
+    import httpx
+    settings = load_settings()
+    
+    mcp_url = settings.mcp_server_url
+    mcp_key = os.getenv("MCP_API_KEY")
+    doc_id = settings.google_doc_id
+    
+    results = {
+        "mcp_server_url": mcp_url,
+        "mcp_api_key_status": "present" if mcp_key else "missing",
+        "google_doc_id_status": "present" if doc_id else "missing",
+        "google_doc_id_preview": f"{doc_id[:8]}..." if doc_id else None,
+        "connection_test": "not_started"
+    }
+    
+    try:
+        headers = {}
+        if mcp_key:
+            headers["X-API-Key"] = mcp_key
+            
+        # Send a test dummy request to see if we get a response (expect 403 or 401 if wrong, or 500, but not connection error)
+        response = httpx.post(
+            f"{mcp_url}/append_to_doc", 
+            json={"doc_id": "test_ping_id", "content": "ping_test"}, 
+            headers=headers, 
+            timeout=8.0
+        )
+        results["connection_test"] = {
+            "status_code": response.status_code,
+            "response_preview": response.text[:200]
+        }
+    except Exception as exc:
+        results["connection_test"] = {
+            "error_type": type(exc).__name__,
+            "error_message": str(exc)
+        }
+        
+    return results
