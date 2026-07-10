@@ -72,14 +72,24 @@ def _run_pipeline_background(
     dry_run: bool,
 ) -> None:
     """Invokes the compiled LangGraph pipeline graph in a background thread."""
-    from review_pulse.graph.builder import build_pulse_graph
-    from review_pulse.db.repository import RunRepository
+    import traceback
+    import sys
 
     settings = load_settings()
     repo = RunRepository(settings.database_path)
 
     try:
+        logger.info("[BG:%s] Starting pipeline background task", run_id)
+        print(f"[BG:{run_id}] Starting pipeline background task", flush=True)
+
+        from review_pulse.graph.builder import build_pulse_graph
+        logger.info("[BG:%s] Graph builder imported successfully", run_id)
+        print(f"[BG:{run_id}] Graph builder imported", flush=True)
+
         graph = build_pulse_graph().compile()
+        logger.info("[BG:%s] Graph compiled successfully", run_id)
+        print(f"[BG:{run_id}] Graph compiled", flush=True)
+
         initial_state = {
             "run_id": run_id,
             "product_slug": product_slug,
@@ -93,20 +103,97 @@ def _run_pipeline_background(
             "skip": False,
         }
 
+        logger.info("[BG:%s] Invoking graph...", run_id)
+        print(f"[BG:{run_id}] Invoking graph...", flush=True)
         result = graph.invoke(initial_state)
 
         if result.get("skip", False):
-            logger.info("Pipeline background run %s completed: skipped (idempotency)", run_id)
+            logger.info("[BG:%s] Pipeline completed: skipped (idempotency)", run_id)
+            print(f"[BG:{run_id}] Skipped (idempotency)", flush=True)
         else:
-            logger.info("Pipeline background run %s completed successfully", run_id)
+            logger.info("[BG:%s] Pipeline completed successfully", run_id)
+            print(f"[BG:{run_id}] Completed successfully", flush=True)
 
     except Exception as exc:
-        logger.exception("Pipeline background run %s failed: %s", run_id, exc)
-        # Mark run as failed in database
+        error_msg = f"{type(exc).__name__}: {exc}"
+        tb = traceback.format_exc()
+        logger.exception("[BG:%s] Pipeline FAILED: %s", run_id, error_msg)
+        print(f"[BG:{run_id}] FAILED: {error_msg}", flush=True)
+        print(tb, file=sys.stderr, flush=True)
         try:
-            repo.update_run_status(run_id, "failed", error_message=str(exc))
+            repo.update_run_status(run_id, "failed", error_message=error_msg[:500])
         except Exception as db_exc:
-            logger.error("Failed to mark run %s as failed in database: %s", run_id, db_exc)
+            logger.error("[BG:%s] Failed to write error to DB: %s", run_id, db_exc)
+            print(f"[BG:{run_id}] DB write failed: {db_exc}", flush=True)
+
+
+@app.post(
+    "/api/debug/run",
+    dependencies=[Depends(verify_api_key)],
+)
+def debug_run_sync(payload: RunPayload) -> dict[str, Any]:
+    """DEBUG: Run the pipeline synchronously to capture errors directly.
+
+    Returns the full error traceback in the HTTP response if it fails.
+    """
+    import traceback
+
+    settings = load_settings()
+    repo = RunRepository(settings.database_path)
+
+    try:
+        config = load_config(payload.product)
+    except Exception as exc:
+        return {"error": f"Config load failed: {exc}"}
+
+    iso_week = payload.week or current_iso_week()
+    try:
+        week_start, week_end = parse_iso_week(iso_week)
+    except ValueError as exc:
+        return {"error": f"Invalid week: {exc}"}
+
+    window_start, window_end = review_window_for_week(week_start, settings.review_window_weeks)
+
+    steps_completed = []
+    try:
+        steps_completed.append("settings_loaded")
+
+        from review_pulse.graph.builder import build_pulse_graph
+        steps_completed.append("builder_imported")
+
+        graph = build_pulse_graph().compile()
+        steps_completed.append("graph_compiled")
+
+        initial_state = {
+            "product_slug": payload.product,
+            "iso_week": iso_week,
+            "week_start": week_start,
+            "week_end": week_end,
+            "window_start": window_start,
+            "window_end": window_end,
+            "force": payload.force,
+            "dry_run": payload.dry_run,
+            "skip": False,
+        }
+
+        result = graph.invoke(initial_state)
+        steps_completed.append("graph_invoked")
+
+        return {
+            "status": "success",
+            "steps_completed": steps_completed,
+            "skip": result.get("skip", False),
+            "run_id": result.get("run_id"),
+        }
+
+    except Exception as exc:
+        return {
+            "status": "failed",
+            "steps_completed": steps_completed,
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+            "traceback": traceback.format_exc(),
+        }
 
 
 @app.post(
