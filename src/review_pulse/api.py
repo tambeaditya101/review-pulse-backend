@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import logging
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +26,16 @@ logger = logging.getLogger(__name__)
 
 # Thread pool for running blocking pipeline tasks without blocking the event loop
 _executor = ThreadPoolExecutor(max_workers=2)
+
+
+def _format_datetime(dt: datetime | None) -> str | None:
+    """Format a naive datetime as UTC ISO 8601 string with a Z suffix."""
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        return dt.isoformat() + "Z"
+    return dt.isoformat()
+
 
 app = FastAPI(
     title="Review Pulse API",
@@ -228,8 +238,8 @@ def list_runs(product: str, limit: int = 5) -> list[dict[str, Any]]:
             "email_sent": r.email_sent,
             "groq_tokens_used": r.groq_tokens_used,
             "error_message": r.error_message,
-            "started_at": r.started_at.isoformat() if r.started_at else None,
-            "completed_at": r.completed_at.isoformat() if r.completed_at else None,
+            "started_at": _format_datetime(r.started_at),
+            "completed_at": _format_datetime(r.completed_at),
         }
         for r in runs
     ]
@@ -254,8 +264,8 @@ def get_run_status(run_id: str) -> dict[str, Any]:
         "reviews_fetched": run.reviews_fetched,
         "reviews_processed": run.reviews_processed,
         "error_message": run.error_message,
-        "started_at": run.started_at.isoformat() if run.started_at else None,
-        "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+        "started_at": _format_datetime(run.started_at),
+        "completed_at": _format_datetime(run.completed_at),
     }
 
 
