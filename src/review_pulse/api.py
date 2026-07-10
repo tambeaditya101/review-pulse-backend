@@ -8,7 +8,10 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, BackgroundTasks, HTTPException, Header, Depends, status
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+from fastapi import FastAPI, HTTPException, Header, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -16,6 +19,9 @@ from review_pulse.config import load_settings, load_config, parse_iso_week, revi
 from review_pulse.db.repository import RunRepository
 
 logger = logging.getLogger(__name__)
+
+# Thread pool for running blocking pipeline tasks without blocking the event loop
+_executor = ThreadPoolExecutor(max_workers=2)
 
 app = FastAPI(
     title="Review Pulse API",
@@ -104,7 +110,7 @@ def _run_pipeline_background(
     status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(verify_api_key)],
 )
-def trigger_run(payload: RunPayload, background_tasks: BackgroundTasks) -> dict[str, Any]:
+async def trigger_run(payload: RunPayload) -> dict[str, Any]:
     """Trigger a new pipeline run for a product and week."""
     settings = load_settings()
     repo = RunRepository(settings.database_path)
@@ -157,18 +163,20 @@ def trigger_run(payload: RunPayload, background_tasks: BackgroundTasks) -> dict[
         status="running",
     )
 
-    # Add pipeline run to background tasks
-    background_tasks.add_task(
+    # Run the pipeline in a thread pool — keeps the event loop free so health checks pass
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(
+        _executor,
         _run_pipeline_background,
-        run_id=run_rec.run_id,
-        product_slug=payload.product,
-        iso_week=iso_week,
-        week_start=week_start,
-        week_end=week_end,
-        window_start=window_start,
-        window_end=window_end,
-        force=payload.force,
-        dry_run=payload.dry_run,
+        run_rec.run_id,
+        payload.product,
+        iso_week,
+        week_start,
+        week_end,
+        window_start,
+        window_end,
+        payload.force,
+        payload.dry_run,
     )
 
     return {

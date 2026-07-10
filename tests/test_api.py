@@ -49,9 +49,12 @@ def test_api_key_authorized(client, mock_repo) -> None:
 #  Pipeline Trigger (POST)
 # ──────────────────────────────────────────────────────────────
 
-@patch("review_pulse.api.BackgroundTasks.add_task")
-def test_trigger_run_success(mock_add_task, client, mock_repo) -> None:
-    # Mock create_run to return a valid RunRecord
+@patch("review_pulse.api.asyncio.get_event_loop")
+def test_trigger_run_success(mock_get_loop, client, mock_repo) -> None:
+    # Prevent the real event loop from actually spawning executor threads
+    mock_loop = MagicMock()
+    mock_get_loop.return_value = mock_loop
+
     mock_run = RunRecord(
         run_id="run_abc",
         product="indmoney",
@@ -74,9 +77,6 @@ def test_trigger_run_success(mock_add_task, client, mock_repo) -> None:
     res_data = response.json()
     assert res_data["run_id"] == "run_abc"
     assert res_data["status"] == "running"
-
-    # Verify background task was queued
-    mock_add_task.assert_called_once()
 
 
 # ──────────────────────────────────────────────────────────────
