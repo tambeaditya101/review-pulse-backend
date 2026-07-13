@@ -288,14 +288,24 @@ def get_run_report(run_id: str) -> dict[str, Any]:
             detail=f"Run '{run_id}' is in status '{run.status}'. Report is not ready.",
         )
 
-    if not run.report_path or not Path(run.report_path).exists():
+    if not run.report_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Report path not specified for run.",
+        )
+
+    report_file_path = Path(run.report_path)
+    if not report_file_path.is_absolute():
+        report_file_path = settings.database_path.parent / report_file_path
+
+    if not report_file_path.exists():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Report markdown file not found on disk.",
         )
 
     try:
-        report_content = Path(run.report_path).read_text(encoding="utf-8")
+        report_content = report_file_path.read_text(encoding="utf-8")
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -116,7 +116,10 @@ def embed_texts(
     import os
     cache_path: Path | None = None
     if run_id:
-        cache_dir = cache_dir or _EMBEDDING_DIR
+        if cache_dir is None:
+            from review_pulse.config import load_settings
+            settings = load_settings()
+            cache_dir = settings.database_path.parent / "embeddings"
         cache_dir.mkdir(parents=True, exist_ok=True)
         cache_path = cache_dir / f"{run_id}.npy"
 

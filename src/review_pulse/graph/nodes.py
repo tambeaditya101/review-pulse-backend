@@ -381,6 +381,9 @@ def render_report(state: PulseState) -> PulseState:
     # Render report to markdown file on disk
     from review_pulse.render.markdown import render_markdown_report
 
+    settings = load_settings()
+    report_dir = settings.database_path.parent / "reports"
+
     report_content = render_markdown_report(
         draft=draft,
         product_slug=state["product_slug"],
@@ -390,12 +393,12 @@ def render_report(state: PulseState) -> PulseState:
         reviews_count=len(reviews),
         run_id=state["run_id"],
         config=config,
+        output_dir=report_dir,
     )
 
-    # Compute actual report path
-    from review_pulse.config import PROJECT_ROOT
+    # Compute portable relative report path
     report_filename = f"{state['product_slug']}-{state['week_start'].isoformat()}.md"
-    report_path = str(PROJECT_ROOT / "data" / "reports" / report_filename)
+    report_path = f"reports/{report_filename}"
 
     return {
         "report_draft": draft,
@@ -432,25 +435,32 @@ def deliver_report(state: PulseState) -> PulseState:
     if doc_id:
         from pathlib import Path
         report_path = state.get("report_path")
-        if report_path and Path(report_path).exists():
-            markdown_content = Path(report_path).read_text(encoding="utf-8")
-            
-            from review_pulse.deliver.mcp_client import deliver_doc_via_mcp
-            logger.info(
-                "[Delivery] Preparing Google Docs delivery — doc_id=%s content_size=%d bytes",
-                doc_id,
-                len(markdown_content.encode("utf-8")),
-            )
-            doc_delivered = deliver_doc_via_mcp(
-                doc_id=doc_id,
-                content=markdown_content,
-            )
-            if doc_delivered:
-                logger.info("[Delivery] Google Docs delivery succeeded — doc_id=%s", doc_id)
+        if report_path:
+            report_file_path = Path(report_path)
+            if not report_file_path.is_absolute():
+                report_file_path = settings.database_path.parent / report_file_path
+
+            if report_file_path.exists():
+                markdown_content = report_file_path.read_text(encoding="utf-8")
+                
+                from review_pulse.deliver.mcp_client import deliver_doc_via_mcp
+                logger.info(
+                    "[Delivery] Preparing Google Docs delivery — doc_id=%s content_size=%d bytes",
+                    doc_id,
+                    len(markdown_content.encode("utf-8")),
+                )
+                doc_delivered = deliver_doc_via_mcp(
+                    doc_id=doc_id,
+                    content=markdown_content,
+                )
+                if doc_delivered:
+                    logger.info("[Delivery] Google Docs delivery succeeded — doc_id=%s", doc_id)
+                else:
+                    logger.error("[Delivery] Google Docs delivery FAILED — doc_id=%s", doc_id)
             else:
-                logger.error("[Delivery] Google Docs delivery FAILED — doc_id=%s", doc_id)
+                logger.warning("Report file not found at %s; skipping doc append", report_file_path)
         else:
-            logger.warning("Report file not found at %s; skipping doc append", report_path)
+            logger.warning("Report path not specified in state; skipping doc append")
     else:
         logger.warning(
             "No GOOGLE_DOC_ID configured in Settings or runs database. "
