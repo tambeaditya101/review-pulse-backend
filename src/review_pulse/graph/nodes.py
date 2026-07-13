@@ -436,12 +436,19 @@ def deliver_report(state: PulseState) -> PulseState:
             markdown_content = Path(report_path).read_text(encoding="utf-8")
             
             from review_pulse.deliver.mcp_client import deliver_doc_via_mcp
-            logger.info("Delivering markdown content to Google Doc ID %s via MCP", doc_id)
+            logger.info(
+                "[Delivery] Preparing Google Docs delivery — doc_id=%s content_size=%d bytes",
+                doc_id,
+                len(markdown_content.encode("utf-8")),
+            )
             doc_delivered = deliver_doc_via_mcp(
                 doc_id=doc_id,
                 content=markdown_content,
-                server_url=settings.mcp_server_url,
             )
+            if doc_delivered:
+                logger.info("[Delivery] Google Docs delivery succeeded — doc_id=%s", doc_id)
+            else:
+                logger.error("[Delivery] Google Docs delivery FAILED — doc_id=%s", doc_id)
         else:
             logger.warning("Report file not found at %s; skipping doc append", report_path)
     else:
@@ -496,13 +503,20 @@ def deliver_report(state: PulseState) -> PulseState:
         subject = f"{config.product.display_name} Weekly Review Pulse — Week {state['iso_week']}"
         
         from review_pulse.deliver.mcp_client import deliver_email_via_mcp
-        logger.info("Creating Gmail draft for %s via MCP", settings.email_recipients)
+        logger.info(
+            "[Delivery] Preparing Gmail draft delivery — to=%s subject=%s",
+            settings.email_recipients,
+            subject[:80],
+        )
         email_sent = deliver_email_via_mcp(
             to=settings.email_recipients,
             subject=subject,
             body=html_body,
-            server_url=settings.mcp_server_url,
         )
+        if email_sent:
+            logger.info("[Delivery] Gmail draft delivery succeeded — to=%s", settings.email_recipients)
+        else:
+            logger.error("[Delivery] Gmail draft delivery FAILED — to=%s", settings.email_recipients)
     elif already_emailed:
         logger.info("Email was already sent for this week; skipping duplicate send.")
 

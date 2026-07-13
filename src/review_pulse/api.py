@@ -329,7 +329,15 @@ def get_run_themes(run_id: str) -> list[dict[str, Any]]:
 
 @app.get("/api/debug/mcp")
 def debug_mcp_connection() -> dict[str, Any]:
-    """Diagnostic endpoint to inspect MCP configuration and test connectivity."""
+    """Diagnostic endpoint to inspect MCP configuration and test connectivity.
+    
+    WARNING: This diagnostic endpoint currently performs a write operation 
+    (POST /append_to_doc with a test ping payload) to verify connectivity. 
+    This should eventually be replaced by a non-destructive health endpoint 
+    (e.g. GET /health or a dedicated ping/probe route) once the MCP server 
+    exposes one. Do not modify the existing endpoint to use new routes until 
+    the MCP API contract supports them.
+    """
     import httpx
     settings = load_settings()
     

@@ -75,8 +75,9 @@ def setup_logging(
         )
         root_logger.addHandler(file_handler)
 
-    # Silence noisy dependencies
-    logging.getLogger("httpx").setLevel(logging.WARNING)
+    # Silence genuinely noisy dependencies that produce no useful diagnostic info.
+    # httpx is intentionally NOT silenced here so that MCP request/response
+    # wire-level logs flow through when the root logger is at DEBUG.
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("googleapiclient").setLevel(logging.WARNING)
     logging.getLogger("sentence_transformers").setLevel(logging.WARNING)

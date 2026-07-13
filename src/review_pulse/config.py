@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     database_path: Path = Path("data/review_pulse.db")
     google_doc_id: str = ""
     mcp_server_url: str = "http://127.0.0.1:8000"
+    # MCP server authentication and tuning
+    mcp_api_key: str | None = None  # X-API-Key header sent to the MCP server
+    mcp_timeout_seconds: float = 60.0  # Per-request timeout in seconds
+    mcp_max_retries: int = 3  # Number of retry attempts on transient failures
 
     @field_validator("google_credentials_path", "google_token_path", "database_path", mode="before")
     @classmethod
