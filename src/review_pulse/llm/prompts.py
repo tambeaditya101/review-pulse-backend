@@ -71,7 +71,7 @@ Requirements:
 - Include up to {max_quotes} total quotes (spread across themes).
 - Include up to {max_action_ideas} action ideas.
 - Every quote text MUST appear verbatim in the <reviews> section above.
-- CRITICAL: Under the "quotes" key, you must ONLY select verbatim quotes from reviews whose date metadata falls strictly within the target week range ({week_start} to {week_end}). Do not select quotes from reviews dated before {week_start}.
+- CRITICAL: Under the "quotes" key, you must ONLY select verbatim quotes from reviews whose date metadata falls within the analysis window ({window_start} to {window_end}). Do not select quotes from reviews dated outside this window.
 """
 
 

@@ -77,7 +77,7 @@ def run_command(
     typer.echo("")
 
     try:
-        from datetime import datetime
+        from datetime import datetime, timezone
         from review_pulse.graph.builder import build_pulse_graph
 
         graph = build_pulse_graph().compile()
@@ -119,7 +119,7 @@ def run_command(
                     existing_run.run_id,
                     status="failed",
                     error_message=str(exc),
-                    completed_at=datetime.now(),
+                    completed_at=datetime.now(timezone.utc),
                 )
         except Exception as db_exc:
             typer.echo(f"Failed to record run failure in DB: {db_exc}", err=True)

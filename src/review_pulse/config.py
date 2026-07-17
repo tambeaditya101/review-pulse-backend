@@ -23,8 +23,10 @@ class ProductConfig(BaseModel):
 
 class ReportConfig(BaseModel):
     max_themes: int = 5
-    max_quotes_per_theme: int = 2
+    max_quotes_per_theme: int = 1  # one representative quote per theme keeps the report concise
     max_action_ideas: int = 5
+    max_reviews_per_cluster: int = 4
+    max_review_chars: int = 180
 
 
 class DeliveryConfig(BaseModel):
@@ -47,6 +49,7 @@ class Settings(BaseSettings):
 
     groq_api_key: str | None = None
     groq_model: str = "llama-3.3-70b-versatile"
+    groq_max_completion_tokens: int = 1500
     google_credentials_path: Path = Path("credentials.json")
     google_token_path: Path = Path("token.json")
     email_recipients: str = ""

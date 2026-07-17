@@ -38,6 +38,7 @@ class ReportQuote:
     source: ReviewSource | None = None
     review_date: date | None = None
     theme_label: str | None = None
+    cluster_id: int | None = None  # stable backend ID; preferred over theme_label for grouping
 
 
 @dataclass

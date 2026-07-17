@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -63,7 +63,7 @@ class RunRepository:
             week_start=week_start,
             week_end=week_end,
             status=status,
-            started_at=datetime.now(),
+            started_at=datetime.now(timezone.utc),
         )
         with self._connect() as conn:
             conn.execute(
@@ -128,6 +128,7 @@ class RunRepository:
         *,
         error_message: str | None = None,
         completed_at: datetime | None = None,
+        started_at: datetime | None = None,
     ) -> None:
         with self._connect() as conn:
             conn.execute(
@@ -135,15 +136,45 @@ class RunRepository:
                 UPDATE runs
                 SET status = ?,
                     error_message = ?,
-                    completed_at = COALESCE(?, completed_at)
+                    completed_at = COALESCE(?, completed_at),
+                    started_at = COALESCE(?, started_at)
                 WHERE run_id = ?
                 """,
                 (
                     status,
                     error_message,
                     completed_at.isoformat() if completed_at else None,
+                    started_at.isoformat() if started_at else None,
                     run_id,
                 ),
+            )
+            conn.commit()
+
+    def reset_run(self, run_id: str, started_at: datetime) -> None:
+        """Reset an existing run record to 'running' status for safe pipeline recovery.
+        
+        This deletes cached reviews and themes for the run and resets all metrics,
+        preserving the existing database row and respecting UNIQUE constraints.
+        """
+        with self._connect() as conn:
+            conn.execute("DELETE FROM reviews WHERE run_id = ?", (run_id,))
+            conn.execute("DELETE FROM themes WHERE run_id = ?", (run_id,))
+            conn.execute(
+                """
+                UPDATE runs
+                SET status = 'running',
+                    reviews_fetched = 0,
+                    reviews_processed = 0,
+                    groq_tokens_used = 0,
+                    report_path = NULL,
+                    google_doc_id = NULL,
+                    email_sent = 0,
+                    error_message = NULL,
+                    started_at = ?,
+                    completed_at = NULL
+                WHERE run_id = ?
+                """,
+                (started_at.isoformat(), run_id),
             )
             conn.commit()
 

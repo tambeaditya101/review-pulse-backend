@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 import time
 
 from review_pulse.config import load_config, load_settings
@@ -21,8 +21,23 @@ from review_pulse.validate.quotes import validate_all_quotes
 logger = logging.getLogger(__name__)
 
 
+def _log_node_state(node_name: str, state: PulseState) -> None:
+    logger.info(
+        "[NODE:%s] state run_id=%s iso_week=%s week_start=%s week_end=%s "
+        "window_start=%s window_end=%s",
+        node_name,
+        state.get("run_id"),
+        state.get("iso_week"),
+        state.get("week_start").isoformat() if state.get("week_start") else "None",
+        state.get("week_end").isoformat() if state.get("week_end") else "None",
+        state.get("window_start").isoformat() if state.get("window_start") else "None",
+        state.get("window_end").isoformat() if state.get("window_end") else "None",
+    )
+
+
 def check_idempotency(state: PulseState) -> PulseState:
     """Check if the weekly run has already completed successfully."""
+    _log_node_state("check_idempotency", state)
     logger.info("Node [check_idempotency] starting")
     settings = load_settings()
     repo = RunRepository(settings.database_path)
@@ -30,15 +45,22 @@ def check_idempotency(state: PulseState) -> PulseState:
     existing = repo.get_run_by_product_week(state["product_slug"], state["week_start"])
     if existing and not state.get("force", False):
         if existing.status == "completed":
-            logger.info("Run already completed. Skipping.")
-            return {"skip": True}
+            # Only skip if the completed run actually fetched/processed reviews
+            if existing.reviews_fetched > 0 and existing.reviews_processed > 0:
+                logger.info("Run already completed with review data. Skipping.")
+                return {"skip": True}
+            else:
+                logger.info("Found stale completed run (0 reviews). Recovering and re-running.")
         elif existing.status == "running":
             # If the active run has the same run_id as state["run_id"], it is our current API-spawned execution.
             if state.get("run_id") == existing.run_id:
                 logger.info("Reusing active run ID: %s", existing.run_id)
             else:
                 # Check if stale (older than 1 hour)
-                delta = datetime.now() - existing.started_at
+                started_at = existing.started_at
+                if started_at.tzinfo is None:
+                    started_at = started_at.replace(tzinfo=timezone.utc)
+                delta = datetime.now(timezone.utc) - started_at
                 if delta.total_seconds() > 3600:
                     logger.warning(
                         "Found stale running execution from %s (started %s ago). Re-running/recovering.",
@@ -55,6 +77,7 @@ def check_idempotency(state: PulseState) -> PulseState:
 
     # Initialize run record in database as running
     run_rec = existing
+    now_utc = datetime.now(timezone.utc)
     if not run_rec:
         run_rec = repo.create_run(
             product=state["product_slug"],
@@ -63,9 +86,10 @@ def check_idempotency(state: PulseState) -> PulseState:
             status="running",
         )
     else:
-        repo.update_run_status(run_rec.run_id, "running")
+        # Re-run transitions existing run to running, reset/persist started_at
+        repo.update_run_status(run_rec.run_id, "running", started_at=now_utc)
         run_rec.status = "running"
-        run_rec.started_at = datetime.now()
+        run_rec.started_at = now_utc
 
     metrics = state.get("metrics") or RunMetrics()
 
@@ -80,6 +104,7 @@ def check_idempotency(state: PulseState) -> PulseState:
 
 def fetch_reviews(state: PulseState) -> PulseState:
     """Fetch raw reviews from Google Play and Apple App Store."""
+    _log_node_state("fetch_reviews", state)
     if state.get("skip", False):
         return {}
 
@@ -92,10 +117,10 @@ def fetch_reviews(state: PulseState) -> PulseState:
         window_end=state["window_end"],
     )
 
-    # Count reviews strictly belonging to the target week for the dashboard metrics
-    week_start = state["week_start"]
-    week_end = state["week_end"]
-    fetched_count = sum(1 for r in raw if week_start <= r.review_date <= week_end)
+    # Count reviews within the full analysis window for accurate metrics
+    window_start = state["window_start"]
+    window_end = state["window_end"]
+    fetched_count = sum(1 for r in raw if window_start <= r.review_date <= window_end)
 
     metrics = state.get("metrics") or RunMetrics()
     metrics.reviews_fetched = fetched_count
@@ -108,6 +133,7 @@ def fetch_reviews(state: PulseState) -> PulseState:
 
 def clean_reviews(state: PulseState) -> PulseState:
     """Clean and deduplicate the fetched reviews."""
+    _log_node_state("clean_reviews", state)
     if state.get("skip", False):
         return {}
 
@@ -120,10 +146,10 @@ def clean_reviews(state: PulseState) -> PulseState:
         window_end=state["window_end"],
     )
 
-    # Count reviews strictly belonging to the target week for the dashboard metrics
-    week_start = state["week_start"]
-    week_end = state["week_end"]
-    processed_count = sum(1 for r in cleaned if week_start <= r.review_date <= week_end)
+    # Count reviews within the full analysis window for accurate metrics
+    window_start = state["window_start"]
+    window_end = state["window_end"]
+    processed_count = sum(1 for r in cleaned if window_start <= r.review_date <= window_end)
 
     metrics = state.get("metrics") or RunMetrics()
     metrics.reviews_processed = processed_count
@@ -136,6 +162,7 @@ def clean_reviews(state: PulseState) -> PulseState:
 
 def scrub_pii(state: PulseState) -> PulseState:
     """Scrub personal identifying information (PII) from reviews."""
+    _log_node_state("scrub_pii", state)
     if state.get("skip", False):
         return {}
 
@@ -168,6 +195,7 @@ def scrub_pii(state: PulseState) -> PulseState:
 
 def embed_and_cluster(state: PulseState) -> PulseState:
     """Generate local sentence embeddings and cluster them into themes."""
+    _log_node_state("embed_and_cluster", state)
     if state.get("skip", False):
         return {}
 
@@ -186,7 +214,7 @@ def embed_and_cluster(state: PulseState) -> PulseState:
     }
 
 
-def _sample_reviews_for_llm(reviews: list[Review], max_per_cluster: int = 8, max_chars: int = 250) -> list[Review]:
+def _sample_reviews_for_llm(reviews: list[Review], max_per_cluster: int = 4, max_chars: int = 180) -> list[Review]:
     """Sample up to max_per_cluster reviews from each cluster and truncate text to avoid exceeding LLM rate limits."""
     import collections
     by_cluster = collections.defaultdict(list)
@@ -222,6 +250,7 @@ def _sample_reviews_for_llm(reviews: list[Review], max_per_cluster: int = 8, max
 
 def generate_report(state: PulseState) -> PulseState:
     """Generate the structured report draft using Groq LLM."""
+    _log_node_state("generate_report", state)
     if state.get("skip", False):
         return {}
 
@@ -236,7 +265,11 @@ def generate_report(state: PulseState) -> PulseState:
     api_key = settings.require_groq_api_key()
 
     # Sample reviews to avoid hitting token per minute rate limits
-    sampled_reviews = _sample_reviews_for_llm(reviews, max_per_cluster=8)
+    sampled_reviews = _sample_reviews_for_llm(
+        reviews,
+        max_per_cluster=config.report.max_reviews_per_cluster,
+        max_chars=config.report.max_review_chars,
+    )
     logger.info("Sampled %d reviews for LLM prompt out of %d total", len(sampled_reviews), len(reviews))
 
     prompt = build_user_prompt(
@@ -258,6 +291,8 @@ def generate_report(state: PulseState) -> PulseState:
         api_key=api_key,
         user_prompt=prompt,
         model=settings.groq_model,
+        run_id=state.get("run_id"),
+        max_completion_tokens=settings.groq_max_completion_tokens,
     )
 
     # Map LLM theme descriptions/labels back to cluster objects
@@ -298,6 +333,7 @@ def generate_report(state: PulseState) -> PulseState:
 
 def validate_quotes(state: PulseState) -> PulseState:
     """Validate that LLM report quotes fuzzy-match source reviews."""
+    _log_node_state("validate_quotes", state)
     if state.get("skip", False):
         return {}
 
@@ -323,6 +359,7 @@ def validate_quotes(state: PulseState) -> PulseState:
 
 def render_report(state: PulseState) -> PulseState:
     """Parse report draft and render it to a markdown file on disk."""
+    _log_node_state("render_report", state)
     if state.get("skip", False):
         return {}
 
@@ -349,30 +386,76 @@ def render_report(state: PulseState) -> PulseState:
                     best_score = score
                     best_rev = r
 
-            quote_date = best_rev.review_date if best_rev else None
-            quote_rating = best_rev.rating if best_rev else q.get("rating")
-            quote_source = best_rev.source if best_rev else q.get("source")
+            # Verify the matched review is within the analysis window
+            window_start = state["window_start"]
+            window_end = state["window_end"]
+            if best_rev and (window_start <= best_rev.review_date <= window_end):
+                quote_date = best_rev.review_date
+                quote_rating = best_rev.rating
+                quote_source = best_rev.source
 
-            valid_quotes_list.append(
-                ReportQuote(
-                    text=quote_text,
-                    rating=quote_rating,
-                    source=quote_source,
-                    review_date=quote_date,
-                    theme_label=q.get("theme_label"),
+                valid_quotes_list.append(
+                    ReportQuote(
+                        text=quote_text,
+                        rating=quote_rating,
+                        source=quote_source,
+                        review_date=quote_date,
+                        theme_label=q.get("theme_label"),
+                    )
                 )
-            )
+            else:
+                # Skip quote if no matching review in window
+                continue
+
+    # --- Fix 1: Build ReportDraft themes from the authoritative ThemeCluster objects,
+    # not from the LLM JSON. The LLM only provides labels and descriptions;
+    # review_count and avg_rating always come from the backend clusterer.
+    authoritative_themes = state.get("themes", [])
+
+    # Build a cluster_id → ThemeCluster lookup for authoritative metric resolution
+    cluster_lookup = {t.cluster_id: t for t in authoritative_themes}
+
+    # --- Fix 3: Resolve each quote's cluster_id from the existing theme_mapping
+    # (populated in generate_report) so quote-to-theme association is by stable
+    # integer cluster_id instead of a fragile LLM-generated string label.
+    #
+    # theme_mapping is not carried in state, so we re-derive a cid→label mapping
+    # from the report_json themes, exactly as generate_report does, then invert it
+    # so we can tag each quote with the cid that was resolved during generation.
+    import re as _re
+    label_to_cid: dict[str, int] = {}
+    for t_json in report_json.get("themes", []):
+        raw_cid = t_json.get("cluster_id")
+        lbl = (t_json.get("label") or "").strip()
+        if raw_cid is not None and lbl:
+            try:
+                if isinstance(raw_cid, str):
+                    m = _re.search(r'\d+', raw_cid)
+                    cid = int(m.group()) - 1 if m else -1
+                else:
+                    cid = int(raw_cid) - 1
+                if cid >= 0:
+                    label_to_cid[lbl.lower()] = cid
+            except Exception:
+                pass
+
+    # Now attach cluster_id to each valid quote using the label_to_cid map
+    for quote in valid_quotes_list:
+        tl = (quote.theme_label or "").strip().lower()
+        quote.cluster_id = label_to_cid.get(tl)  # type: ignore[attr-defined]
 
     draft = ReportDraft(
         summary=report_json.get("summary", ""),
         themes=[
             ReportTheme(
-                label=t.get("label"),
-                description=t.get("description"),
-                review_count=t.get("review_count"),
-                avg_rating=t.get("avg_rating"),
+                label=t.label,
+                description=t.description,
+                # Fix 1: Use authoritative backend counts, never LLM estimates
+                review_count=t.review_count,
+                avg_rating=t.avg_rating,
             )
-            for t in report_json.get("themes", [])
+            for t in authoritative_themes
+            if t.label  # only include themes that received an LLM label
         ],
         quotes=valid_quotes_list,
         action_ideas=report_json.get("action_ideas", []),
@@ -390,9 +473,14 @@ def render_report(state: PulseState) -> PulseState:
         product_display_name=config.product.display_name,
         week_start=state["week_start"],
         week_end=state["week_end"],
+        # Fix 2: Pass analysis window so raw markdown header can display it
+        window_start=state["window_start"],
+        window_end=state["window_end"],
         reviews_count=len(reviews),
         run_id=state["run_id"],
         config=config,
+        # Fix 3: Pass cluster_lookup so renderer can associate quotes by cluster_id
+        cluster_lookup=cluster_lookup,
         output_dir=report_dir,
     )
 
@@ -407,7 +495,8 @@ def render_report(state: PulseState) -> PulseState:
 
 
 def deliver_report(state: PulseState) -> PulseState:
-    """Deliver the report by sending POST requests to the local MCP server."""
+    """Deliver report to configured destinations (Google Docs, email, Slack)."""
+    _log_node_state("deliver_report", state)
     if state.get("skip", False):
         return {}
 
@@ -538,7 +627,8 @@ def deliver_report(state: PulseState) -> PulseState:
 
 
 def audit_log(state: PulseState) -> PulseState:
-    """Record run details, status, and metrics into database."""
+    """Log the final outcomes of a completed run to SQLite for auditing/idempotency."""
+    _log_node_state("audit_log", state)
     if state.get("skip", False):
         return {}
 
@@ -565,7 +655,7 @@ def audit_log(state: PulseState) -> PulseState:
     repo.update_run_status(
         run_id,
         status="completed",
-        completed_at=datetime.now(),
+        completed_at=datetime.now(timezone.utc),
     )
 
     # Update other database properties

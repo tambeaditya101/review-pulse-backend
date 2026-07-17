@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 from review_pulse.config import AppConfig, PROJECT_ROOT
 from review_pulse.models import ReportDraft
@@ -25,6 +26,11 @@ def render_markdown_report(
     run_id: str,
     config: AppConfig,
     output_dir: Path | None = None,
+    # Fix 2: analysis window for the raw markdown header
+    window_start: date | None = None,
+    window_end: date | None = None,
+    # Fix 3: cluster_id → ThemeCluster lookup for reliable quote grouping
+    cluster_lookup: dict[int, Any] | None = None,
 ) -> str:
     """Generate a formatted markdown report and save it to disk.
 
@@ -34,25 +40,38 @@ def render_markdown_report(
         product_display_name: Display name of the product (e.g. 'INDMoney').
         week_start: Start date of report week.
         week_end: End date of report week.
-        reviews_count: Total reviews analyzed.
+        reviews_count: Total reviews analyzed (from analysis window).
         run_id: Unique pipeline run identifier.
         config: Loaded product config to enforce max limits.
         output_dir: Optional path override to write report file.
+        window_start: Analysis window start date (10-week lookback).
+        window_end: Analysis window end date (same as week_end).
+        cluster_lookup: Maps cluster_id (int) → ThemeCluster; used to group
+            quotes by stable cluster_id rather than fragile string label.
 
     Returns:
         The generated markdown report string.
     """
     logger.info("Rendering markdown report for run %s", run_id)
 
-    # Format header
+    # --- Fix 2: Header clearly distinguishes Reporting Week from Analysis Window ---
     week_start_str = week_start.strftime("%B %d, %Y")
     week_end_str = week_end.strftime("%B %d, %Y")
+
     lines = [
         f"# {product_display_name} — Weekly Review Pulse",
         "",
-        f"**Period:** {week_start_str} – {week_end_str}  ",
-        "**Sources:** Google Play, Apple App Store  ",
-        f"**Reviews analyzed:** {reviews_count}",
+        f"**Reporting Week:** {week_start_str} – {week_end_str}",
+    ]
+
+    if window_start and window_end:
+        win_start_str = window_start.strftime("%B %d, %Y")
+        win_end_str = window_end.strftime("%B %d, %Y")
+        lines.append(f"**Analysis Window:** {win_start_str} – {win_end_str} (10 weeks)")
+
+    lines += [
+        "**Sources:** Google Play, Apple App Store",
+        f"**Reviews Analyzed:** {reviews_count}",
         "",
         "## Executive Summary",
         draft.summary.strip(),
@@ -60,11 +79,12 @@ def render_markdown_report(
         "## Top Themes",
     ]
 
-    # Render Themes (limit to max_themes)
+    # --- Render Themes (limit to max_themes) ---
+    # Fix 1: review_count and avg_rating come from authoritative ThemeCluster objects
+    # via draft.themes (which nodes.py now populates from state["themes"], not LLM JSON).
     max_themes = config.report.max_themes
     themes_to_render = draft.themes[:max_themes]
     for i, theme in enumerate(themes_to_render, start=1):
-        # average rating display formatting
         avg_rating_str = f"{theme.avg_rating:.1f}" if theme.avg_rating is not None else "-"
         lines.append(
             f"{i}. **{theme.label.strip()}** — {theme.description.strip()} "
@@ -73,53 +93,69 @@ def render_markdown_report(
 
     lines.append("")
     lines.append("## Representative Quotes")
+    lines.append(
+        "_Quotes are drawn from the full analysis window and represent "
+        "the most illustrative feedback for each theme._"
+    )
+    lines.append("")
 
-    # Render Quotes (limit to max_quotes_per_theme per theme, up to total limit)
-    # Group quotes by theme label
-    from collections import defaultdict
-    quotes_by_theme = defaultdict(list)
-    for q in draft.quotes:
-        if q.theme_label:
-            quotes_by_theme[q.theme_label.strip()].append(q)
-
-    # Keep track of quotes printed to respect total maximum constraint
-    quotes_printed = 0
+    # --- Fix 3: Group quotes by cluster_id (stable integer) rather than theme_label ---
+    # Fix 4: Show at most max_quotes_per_theme quotes per theme (default 1)
     max_quotes_per_theme = config.report.max_quotes_per_theme
 
-    # Iterate over rendered themes to print their representative quotes
+    # Build cluster_id → [ReportQuote] mapping
+    from collections import defaultdict
+    quotes_by_cid: dict[int | None, list] = defaultdict(list)
+    for q in draft.quotes:
+        cid = getattr(q, "cluster_id", None)
+        quotes_by_cid[cid].append(q)
+
+    # Walk themes in render order; look up quotes by cluster_id
+    quotes_printed = 0
     for theme in themes_to_render:
-        theme_quotes = quotes_by_theme.get(theme.label.strip(), [])
-        # Also check fallback if theme label matches slightly or is listed in another key format
-        if not theme_quotes:
-            # Case-insensitive / whitespace-insensitive fallback check
-            theme_label_normalized = theme.label.strip().lower()
-            for label, q_list in quotes_by_theme.items():
-                if label.lower() == theme_label_normalized:
-                    theme_quotes = q_list
+        # Resolve the cluster_id for this theme from cluster_lookup
+        theme_cid: int | None = None
+        if cluster_lookup:
+            for cid, tc in cluster_lookup.items():
+                if tc.label == theme.label:
+                    theme_cid = cid
                     break
 
-        # Limit quotes per theme
-        theme_quotes_limited = theme_quotes[:max_quotes_per_theme]
+        theme_quotes = quotes_by_cid.get(theme_cid, [])
 
-        for q in theme_quotes_limited:
+        # Fix 4: limit to max_quotes_per_theme per theme
+        for q in theme_quotes[:max_quotes_per_theme]:
             rating_str = f"{q.rating}★" if q.rating is not None else "★-"
             source_str = "Google Play" if q.source == "google_play" else "App Store"
             date_str = q.review_date.strftime("%Y-%m-%d") if q.review_date else "unknown date"
-
             lines.append(
                 f'> "{q.text.strip()}" — {rating_str}, {source_str}, {date_str}'
             )
+            lines.append(f'> _{theme.label.strip()} · from analysis window_')
+            lines.append("")
             quotes_printed += 1
 
-    # Fallback: if no quotes were printed under the theme groups, output up to max_themes * max_quotes_per_theme first quotes
+    # Fallback: if cluster_id resolution yielded nothing, fall back to theme_label matching
     if quotes_printed == 0 and draft.quotes:
-        for q in draft.quotes[:max_themes * max_quotes_per_theme]:
-            rating_str = f"{q.rating}★" if q.rating is not None else "★-"
-            source_str = "Google Play" if q.source == "google_play" else "App Store"
-            date_str = q.review_date.strftime("%Y-%m-%d") if q.review_date else "unknown date"
-            lines.append(
-                f'> "{q.text.strip()}" — {rating_str}, {source_str}, {date_str}'
-            )
+        logger.warning(
+            "cluster_id-based quote grouping produced no output; "
+            "falling back to theme_label string matching"
+        )
+        from collections import defaultdict as _dd
+        quotes_by_label: dict[str, list] = _dd(list)
+        for q in draft.quotes:
+            if q.theme_label:
+                quotes_by_label[q.theme_label.strip().lower()].append(q)
+
+        for theme in themes_to_render:
+            label_key = theme.label.strip().lower()
+            for q in quotes_by_label.get(label_key, [])[:max_quotes_per_theme]:
+                rating_str = f"{q.rating}★" if q.rating is not None else "★-"
+                source_str = "Google Play" if q.source == "google_play" else "App Store"
+                date_str = q.review_date.strftime("%Y-%m-%d") if q.review_date else "unknown date"
+                lines.append(
+                    f'> "{q.text.strip()}" — {rating_str}, {source_str}, {date_str}'
+                )
 
     lines.append("")
     lines.append("## Action Ideas")
@@ -147,3 +183,4 @@ def render_markdown_report(
     logger.info("Saved report markdown file to %s", report_path)
 
     return markdown_content
+

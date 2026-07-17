@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -29,11 +29,9 @@ _executor = ThreadPoolExecutor(max_workers=2)
 
 
 def _format_datetime(dt: datetime | None) -> str | None:
-    """Format a naive datetime as UTC ISO 8601 string with a Z suffix."""
+    """Format a datetime as ISO 8601 string."""
     if not dt:
         return None
-    if dt.tzinfo is None:
-        return dt.isoformat() + "Z"
     return dt.isoformat()
 
 
@@ -113,6 +111,12 @@ def _run_pipeline_background(
             "skip": False,
         }
 
+        logger.info(
+            "[BG_INVOKE] run_id=%s product_slug=%s iso_week=%s "
+            "week_start=%s week_end=%s window_start=%s window_end=%s",
+            run_id, product_slug, iso_week, week_start.isoformat(), week_end.isoformat(), window_start.isoformat(), window_end.isoformat()
+        )
+
         logger.info("[BG:%s] Invoking graph...", run_id)
         print(f"[BG:{run_id}] Invoking graph...", flush=True)
         result = graph.invoke(initial_state)
@@ -166,32 +170,63 @@ async def trigger_run(payload: RunPayload) -> dict[str, Any]:
 
     window_start, window_end = review_window_for_week(week_start, settings.review_window_weeks)
 
+    logger.info(
+        "[API_TRIGGER] payload.week=%s parsed week_start=%s week_end=%s "
+        "calculated window_start=%s window_end=%s",
+        payload.week, week_start.isoformat(), week_end.isoformat(), window_start.isoformat(), window_end.isoformat()
+    )
+
     # Check for active running or already completed runs (Fast API level check)
     existing = repo.get_run_by_product_week(payload.product, week_start)
     if existing and not payload.force:
         if existing.status == "completed":
-            return {
-                "run_id": existing.run_id,
-                "status": "completed",
-                "message": "Run already completed for this week. Use force=true to override.",
-            }
+            # Valid completed run check: contains processed reviews
+            if existing.reviews_fetched > 0 and existing.reviews_processed > 0:
+                return {
+                    "run_id": existing.run_id,
+                    "status": "completed",
+                    "message": "A report already exists for the selected reporting week.",
+                }
+            else:
+                # Stale completed run with 0 reviews: reset and reuse it safely
+                logger.info("Reusing stale completed run: %s", existing.run_id)
+                repo.reset_run(existing.run_id, datetime.now(timezone.utc))
+                run_rec = existing
         elif existing.status == "running":
-            import datetime
-            delta = datetime.datetime.now() - existing.started_at
+            started_at = existing.started_at
+            if started_at.tzinfo is None:
+                started_at = started_at.replace(tzinfo=timezone.utc)
+            delta = datetime.now(timezone.utc) - started_at
             if delta.total_seconds() <= 3600:
                 return {
                     "run_id": existing.run_id,
                     "status": "running",
                     "message": f"Another execution is already active (started {delta.total_seconds() / 60:.1f}m ago).",
                 }
-
-    # Pre-register the run as running to obtain a stable run_id
-    run_rec = repo.create_run(
-        product=payload.product,
-        week_start=week_start,
-        week_end=week_end,
-        status="running",
-    )
+            else:
+                # Stale running execution: reset and reuse it safely
+                logger.info("Reusing stale running run: %s", existing.run_id)
+                repo.reset_run(existing.run_id, datetime.now(timezone.utc))
+                run_rec = existing
+        else:
+            # Failed or other statuses: reset and reuse it safely
+            logger.info("Reusing failed/stale run record: %s", existing.run_id)
+            repo.reset_run(existing.run_id, datetime.now(timezone.utc))
+            run_rec = existing
+    else:
+        # If payload.force is True and existing exists, we must reset and reuse it to avoid UNIQUE constraint violation.
+        if existing:
+            logger.info("Force run requested: resetting existing run record %s", existing.run_id)
+            repo.reset_run(existing.run_id, datetime.now(timezone.utc))
+            run_rec = existing
+        else:
+            # Pre-register a new run as running
+            run_rec = repo.create_run(
+                product=payload.product,
+                week_start=week_start,
+                week_end=week_end,
+                status="running",
+            )
 
     # Run the pipeline in a thread pool — keeps the event loop free so health checks pass
     loop = asyncio.get_event_loop()

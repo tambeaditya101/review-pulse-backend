@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from review_pulse.models import Review
 
@@ -31,6 +31,11 @@ def fetch_google_play_reviews(
     """
     # Lazy import to avoid import-time failures in test environments
     from google_play_scraper import Sort, reviews
+
+    logger.info(
+        "[GOOGLE_PLAY_FETCH] Starting fetch: package=%s window_start=%s window_end=%s",
+        package_name, window_start.isoformat(), window_end.isoformat()
+    )
 
     collected: list[Review] = []
     continuation_token = None
@@ -58,41 +63,78 @@ def fetch_google_play_reviews(
             break
 
         if not batch:
-            logger.debug("No more reviews returned; stopping pagination")
+            logger.info("[GOOGLE_PLAY_FETCH] Page %d: no batch returned, stopping pagination", page)
             break
 
-        all_before_window = True
+        # Log page stats
+        dates = []
+        for raw in batch:
+            at = raw.get("at")
+            if at:
+                if isinstance(at, datetime):
+                    dates.append(at.date())
+                elif isinstance(at, date):
+                    dates.append(at)
+        if dates:
+            logger.info(
+                "[GOOGLE_PLAY_BATCH] Page %d: newest_seen=%s oldest_seen=%s batch_size=%d",
+                page, max(dates).isoformat(), min(dates).isoformat(), len(batch)
+            )
+
+        # Track categories of reviews present in this page
+        has_newer = False
+        has_inside = False
+        has_older = False
+
         for raw in batch:
             review = _normalize(raw)
             if review is None:
                 continue
 
-            # Skip reviews after the window end
             if review.review_date > window_end:
-                all_before_window = False
+                has_newer = True
                 continue
 
-            # Stop when reviews are before the window start
             if review.review_date < window_start:
+                has_older = True
                 continue
-            else:
-                all_before_window = False
 
+            # Review falls within the analysis window
+            has_inside = True
             collected.append(review)
 
-        # If all reviews in this batch are before our window, stop
-        if all_before_window and batch:
-            logger.debug("All reviews in batch before window; stopping")
+        # Stop pagination only when we have strictly passed the window.
+        # This is true when we see older reviews, but no newer or inside reviews.
+        # If there are newer reviews on the page, we are still scrolling down towards the window.
+        # If there are inside reviews on the page, we want to collect them and continue.
+        if has_older and not has_newer and not has_inside:
+            logger.info(
+                "[GOOGLE_PLAY_STOP] Page %d: stopping pagination because we have scrolled past the window. "
+                "Batch bounds: newest=%s, oldest=%s",
+                page,
+                max(dates).isoformat() if dates else "None",
+                min(dates).isoformat() if dates else "None"
+            )
             break
 
         if not continuation_token:
-            logger.debug("No continuation token; stopping pagination")
+            logger.info("[GOOGLE_PLAY_FETCH] Page %d: no continuation token, stopping", page)
             break
 
         # Polite delay
         time.sleep(_DELAY_SECONDS)
 
+    if collected:
+        c_dates = [r.review_date for r in collected]
+        logger.info(
+            "[GOOGLE_PLAY_FETCH_DONE] Fetched %d reviews within window. earliest=%s latest=%s",
+            len(collected), min(c_dates).isoformat(), max(c_dates).isoformat()
+        )
+    else:
+        logger.info("[GOOGLE_PLAY_FETCH_DONE] Fetched 0 reviews within window.")
+
     return collected
+
 
 
 def _normalize(raw: dict) -> Review | None:
@@ -127,7 +169,7 @@ def _normalize(raw: dict) -> Review | None:
             title=None,  # Google Play reviews don't have separate titles
             author=raw.get("userName"),
             app_version=raw.get("reviewCreatedVersion"),
-            fetched_at=datetime.now(),
+            fetched_at=datetime.now(timezone.utc),
         )
     except Exception:
         logger.debug("Failed to normalize Google Play review: %s", raw, exc_info=True)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -61,7 +61,7 @@ def test_trigger_run_success(mock_get_loop, client, mock_repo) -> None:
         week_start=date(2026, 3, 30),
         week_end=date(2026, 4, 5),
         status="running",
-        started_at=datetime.now(),
+        started_at=datetime.now(timezone.utc),
     )
     mock_repo.get_run_by_product_week.return_value = None
     mock_repo.create_run.return_value = mock_run

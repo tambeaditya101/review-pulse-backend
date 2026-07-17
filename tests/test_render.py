@@ -76,8 +76,8 @@ def test_markdown_rendering(dummy_draft, tmp_path) -> None:
     # 2. Check sections are present
     content = report_file.read_text(encoding="utf-8")
     assert "# INDMoney — Weekly Review Pulse" in content
-    assert "**Period:** March 30, 2026 – April 05, 2026" in content
-    assert "**Reviews analyzed:** 100" in content
+    assert "**Reporting Week:** March 30, 2026 – April 05, 2026" in content
+    assert "**Reviews Analyzed:** 100" in content
     assert "## Executive Summary" in content
     assert "## Top Themes" in content
     assert "1. **Stock Search UI** — Users praise the faster stock lookup UI. (60 reviews, avg ★4.5)" in content

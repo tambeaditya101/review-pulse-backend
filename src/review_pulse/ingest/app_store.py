@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from review_pulse.models import Review
 
@@ -61,6 +61,11 @@ def fetch_app_store_reviews(
         logger.error("App Store fetch failed after %d retries", _MAX_RETRIES)
         return []
 
+    logger.info(
+        "[APP_STORE_FETCH] Starting fetch: app_id=%d window_start=%s window_end=%s",
+        app_id, window_start.isoformat(), window_end.isoformat()
+    )
+
     # Filter + normalize
     collected: list[Review] = []
     for raw in raw_reviews:
@@ -71,12 +76,15 @@ def fetch_app_store_reviews(
             continue
         collected.append(review)
 
-    logger.info(
-        "App Store: %d reviews within window [%s, %s]",
-        len(collected),
-        window_start,
-        window_end,
-    )
+    if collected:
+        c_dates = [r.review_date for r in collected]
+        logger.info(
+            "[APP_STORE_FETCH_DONE] Fetched %d reviews within window. earliest=%s latest=%s",
+            len(collected), min(c_dates).isoformat(), max(c_dates).isoformat()
+        )
+    else:
+        logger.info("[APP_STORE_FETCH_DONE] Fetched 0 reviews within window.")
+
     return collected
 
 
@@ -111,7 +119,7 @@ def _normalize(raw: dict) -> Review | None:
             title=raw.get("title"),
             author=raw.get("userName"),
             app_version=raw.get("isCurrentVersion"),
-            fetched_at=datetime.now(),
+            fetched_at=datetime.now(timezone.utc),
         )
     except Exception:
         logger.debug("Failed to normalize App Store review: %s", raw, exc_info=True)

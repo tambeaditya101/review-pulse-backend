@@ -119,13 +119,25 @@ def clean_and_deduplicate(
         cleaned.append(cleaned_review)
         stats["kept"] += 1
 
-    logger.info(
-        "Cleaning stats: kept=%d, short=%d, out_of_window=%d, duplicate=%d (from %d total)",
-        stats["kept"],
-        stats["short"],
-        stats["out_of_window"],
-        stats["duplicate"],
-        len(reviews),
-    )
+    if cleaned:
+        c_dates = [r.review_date for r in cleaned]
+        logger.info(
+            "[CLEANING_DONE] Cleaned stats: kept=%d, short=%d, out_of_window=%d, duplicate=%d (from %d total). Earliest retained: %s, Latest retained: %s",
+            stats["kept"],
+            stats["short"],
+            stats["out_of_window"],
+            stats["duplicate"],
+            len(reviews),
+            min(c_dates).isoformat(),
+            max(c_dates).isoformat()
+        )
+    else:
+        logger.info(
+            "[CLEANING_DONE] Cleaned stats: kept=0, short=%d, out_of_window=%d, duplicate=%d (from %d total)",
+            stats["short"],
+            stats["out_of_window"],
+            stats["duplicate"],
+            len(reviews)
+        )
 
     return cleaned
